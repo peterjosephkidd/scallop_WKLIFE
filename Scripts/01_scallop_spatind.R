@@ -443,3 +443,94 @@ scallop_zero_checks <- scallop_voronoi %>%
                    zero_area_percent = 100 * sum(weight[z == 0]), .groups = "drop")
 
 print(scallop_zero_checks, n = nrow(scallop_zero_checks))
+
+# 11. Spatial density maps -----------------------------------------------------
+
+density_maps <- scallop_voronoi %>%
+  dplyr::mutate(year = factor(as.character(year), levels = as.character(2000:2025)))
+
+# Annual centres of gravity in the same projected CRS as the polygons
+cog_maps <- scallop_spatinds %>%
+  dplyr::filter(is.finite(cog_x), is.finite(cog_y)) %>%
+  dplyr::mutate(year = factor(as.character(year), levels = as.character(2000:2025))) %>%
+  sf::st_as_sf(coords = c("cog_x", "cog_y"), crs = 3035)
+
+p_density_maps <- ggplot() +
+  geom_sf(data = france, fill = "grey90", colour = "grey65", linewidth = 0.2) +
+  geom_sf(data = density_maps, aes(fill = z), colour = NA) +
+  geom_sf(data = hull_concave, fill = NA, colour = "grey40", linewidth = 0.2) +
+  geom_sf(data = cog_maps, shape = 4, colour = "white", size = 2.5, stroke = 1.2) +
+  geom_sf(data = cog_maps, shape = 4, colour = "black", size = 2.5, stroke = 0.5) +
+  facet_wrap(~ year, ncol = 5, drop = FALSE) +
+  scale_fill_viridis_c(name = "Density (individuals m⁻²)", option = "C",
+                       trans = scales::pseudo_log_trans(sigma = 0.01, base = 10),
+                       breaks = c(0, 0.01, 0.03, 0.1, 0.3, 1, 3),
+                       labels = scales::label_number(), na.value = "grey75") +
+  coord_sf(xlim = c(map_bbox["xmin"], map_bbox["xmax"]),
+           ylim = c(map_bbox["ymin"], map_bbox["ymax"]),
+           crs = sf::st_crs(3035), datum = NA, expand = FALSE) +
+  labs(title = "King scallop spatial density",
+       subtitle = expression(italic("Pecten maximus") * " | COMOR survey, Bay of Seine | 2000–2025"),
+       caption = paste("Density observations assigned to clipped Voronoi cells. Crosses show annual centres of gravity.",
+                       "Shared psuedo-log colour scale; blank panels indicate years without survey data.", sep = "\n")) +
+  theme_void(base_size = 11) +
+  theme(strip.text = element_text(face = "bold", size = 9, margin = margin(b = 5)),
+        panel.spacing = grid::unit(0.8, "lines"),
+        legend.position = "bottom",
+        plot.title = element_text(face = "bold", size = 14),
+        plot.subtitle = element_text(colour = "grey35", margin = margin(b = 12)),
+        plot.caption = element_text(colour = "grey40", hjust = 0, size = 9, margin = margin(t = 10)),
+        plot.margin = margin(12, 12, 12, 12)) +
+  guides(fill = guide_colourbar(barwidth = grid::unit(10, "cm"),
+                                barheight = grid::unit(0.4, "cm"), title.position = "top"))
+
+p_density_maps
+
+ggsave(filename = file.path(figure_dir, "scallop_COMOR_spatial_density_maps.png"),
+       plot = p_density_maps, width = 10, height = 9, units = "in", dpi = 400, bg = "white")
+
+
+# 12. Centre-of-gravity movement -----------------------------------------------
+
+cog_track <- scallop_spatinds %>%
+  dplyr::mutate(year = as.numeric(as.character(year))) %>%
+  dplyr::filter(is.finite(cog_x), is.finite(cog_y)) %>%
+  dplyr::arrange(year)
+
+p_cog_track <- ggplot() +
+  geom_sf(data = france, fill = "grey90", colour = "grey60", linewidth = 0.3) +
+  geom_sf(data = hull_concave, fill = "grey97", colour = "grey50", linewidth = 0.4) +
+  geom_path(data = cog_track, aes(x = cog_x, y = cog_y), colour = "grey60",
+            linewidth = 0.5, arrow = grid::arrow(length = grid::unit(0.12, "cm"))) +
+  geom_point(data = cog_track, aes(x = cog_x, y = cog_y, colour = year), size = 3) +
+  ggrepel::geom_text_repel(data = dplyr::filter(cog_track, year %in% seq(2000, 2025,5)),
+                           aes(x = cog_x, y = cog_y, label = year),
+                           size = 4, fontface = "bold", colour = "#253746",
+                           seed = 123, box.padding = 0.5, point.padding = 0.4,
+                           min.segment.length = 0, segment.colour = "black") +
+  scale_colour_viridis_c(name = "Year", limits = c(2000, 2025),
+                         breaks = seq(2000, 2025, 5)) +
+  guides(colour = guide_colourbar(barwidth = grid::unit(10, "cm"),
+                                  barheight = grid::unit(0.4, "cm"),
+                                  title.position = "top", title.hjust = 0.5)) +
+  coord_sf(xlim = c(map_bbox["xmin"], map_bbox["xmax"]),
+           ylim = c(map_bbox["ymin"], map_bbox["ymax"]),
+           crs = sf::st_crs(3035), default_crs = sf::st_crs(3035),
+           datum = sf::st_crs(4326), expand = FALSE) +
+  labs(title = "King scallop centre-of-gravity movement",
+       subtitle = expression(italic("Pecten maximus") * " | COMOR survey, Bay of Seine | 2000–2025"),
+       x = NULL, y = NULL,
+       caption = "Arrows connect successive available survey years; no observations are available for 2019–2020.") +
+  theme_bw(base_size = 11) +
+  theme(panel.grid.major = element_line(colour = "grey90", linewidth = 0.25),
+        panel.grid.minor = element_blank(),
+        legend.position = "bottom",
+        plot.title = element_text(face = "bold", size = 14),
+        plot.subtitle = element_text(colour = "grey35", margin = margin(b = 10)),
+        plot.caption = element_text(colour = "grey40", hjust = 0, margin = margin(t = 10)),
+        plot.title.position = "plot", plot.caption.position = "plot")
+
+p_cog_track
+
+ggsave(filename = file.path(figure_dir, "scallop_COMOR_CoG_movement.png"),
+       plot = p_cog_track, width = 9, height = 7, units = "in", dpi = 400, bg = "white")
